@@ -122,15 +122,32 @@ def gitconfig_set(name, value, file=None):
     args += [name, value]
     p = subprocess.check_call(args)
 
+def git_show_toplevel():
+    cwd = os.getcwd()
+    while True:
+        #sys.stderr.write("%s\n" % (cwd))
+        if cwd == "/" or not os.path.isdir(cwd):
+            return None
+        git_dir_path = os.path.join(cwd, ".git")
+        if os.path.isdir(git_dir_path):
+            return os.path.realpath(cwd)
+        cwd = os.path.realpath(os.path.join(cwd, ".."))
+
+def git_gitdir():
+    return os.path.join(git_show_toplevel(), ".git")
+
 class GitFat(object):
     DecodeError = RuntimeError
     def __init__(self):
         self.verbose = verbose_stderr if os.environ.get('GIT_FAT_VERBOSE') else verbose_ignore
         try:
-            self.gitroot = subprocess.check_output('git rev-parse --show-toplevel'.split()).strip()
+            self.gitroot = git_show_toplevel()
+            if self.gitroot is None:
+                sys.stderr.write("git-fat: unable to find toplevel dir of git workspace\n")
+                sys.exit(1)
         except subprocess.CalledProcessError:
             sys.exit(1)
-        self.gitdir = subprocess.check_output('git rev-parse --git-dir'.split()).strip()
+        self.gitdir = git_gitdir()
         self.objdir = os.path.join(self.gitdir, 'fat', 'objects')
         if os.environ.get('GIT_FAT_VERSION') == '1':
             self.encode = self.encode_v1
