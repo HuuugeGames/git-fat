@@ -51,6 +51,15 @@ def verbose_stderr(*args, **kwargs):
 def verbose_ignore(*args, **kwargs):
     pass
 
+def split_array_to_chunks(ary, max_chunk_size=100):
+    current = ary
+    while len(current) >= max_chunk_size:
+        head = current[0:max_chunk_size]
+        yield head
+        current = current[max_chunk_size:len(current)]
+    if len(current) > 0:
+        yield current
+
 def mkdir_p(path):
     import errno
     try:
@@ -420,10 +429,10 @@ class GitFat(object):
     def checkout(self, show_orphans=False):
         'Update any stale files in the present working tree'
         self.assert_init_done()
+        files_to_restore = []
         for digest, fname in self.orphan_files():
             objpath = os.path.join(self.objdir, digest)
             if os.access(objpath, os.R_OK):
-                print('Restoring %s -> %s' % (digest, fname))
                 # The output of our smudge filter depends on the existence of
                 # the file in .git/fat/objects, but git caches the file stat
                 # from the previous time the file was smudged, therefore it
@@ -431,10 +440,16 @@ class GitFat(object):
                 # specifically invalidates that cache, but touching the file
                 # also does the trick.
                 os.utime(fname, None)
-                # This re-smudge is essentially a copy that restores permissions.
-                subprocess.check_call(['git', 'checkout-index', '--index', '--force', fname])
+                files_to_restore.append( (digest, fname ))
             elif show_orphans:
                 print('Data unavailable: %s %s' % (digest,fname))
+        for chunk in split_array_to_chunks(files_to_restore, 100):
+            names = []
+            for digest, fname in chunk:
+                print('Restoring %s -> %s' % (digest, fname))
+                names.append(fname)
+            # This re-smudge is essentially a copy that restores permissions.
+            subprocess.check_call(['git', 'checkout-index', '--index', '--force'] + names)
     def cmd_pull(self, args):
         'Pull anything that I have referenced, but not stored'
         self.setup()
